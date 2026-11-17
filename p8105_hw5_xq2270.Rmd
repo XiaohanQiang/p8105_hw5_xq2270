@@ -122,3 +122,117 @@ longitudinal_data |>
 ```
 
 The spaghetti plot shows distinct trends between the two study arms. Observations in the control group fluctuate over time without a clear upward or downward trend. In contrast, most participants in the experimental group show increasing observations over the eight weeks. Although there is individual variability within both groups, the experimental group demonstrates a more pronounced upward trend compared with the relatively stable control group.
+
+# Problem 3 
+
+
+```{r problem3, fig.width=8, fig.height=5}
+# Set simulation parameters
+set.seed(123)
+
+n = 30
+sigma = 5
+mu_values = 0:6
+n_sim = 5000
+
+# Function to simulate one dataset and perform a t-test
+simulate_t_test = function(mu) {
+  sample_data = rnorm(n, mean = mu, sd = sigma)
+
+  t.test(sample_data, mu = 0) |>
+    broom::tidy() |>
+    select(estimate, p.value)
+}
+
+# Run 5000 simulations for each true mean
+simulation_results =
+  tibble(mu = mu_values) |>
+  mutate(
+    results = map(
+      mu,
+      \(true_mu) map_dfr(
+        1:n_sim,
+        \(i) simulate_t_test(true_mu)
+      )
+    )
+  ) |>
+  unnest(results) |>
+  mutate(rejected = p.value < 0.05)
+
+# Calculate statistical power
+power_results =
+  simulation_results |>
+  group_by(mu) |>
+  summarize(
+    power = mean(rejected),
+    .groups = "drop"
+  )
+
+# Plot power against true mean
+power_results |>
+  ggplot(aes(x = mu, y = power)) +
+  geom_line(color = "steelblue", linewidth = 1) +
+  geom_point(color = "steelblue", size = 2) +
+  labs(
+    title = "Statistical Power by True Mean",
+    x = "True Mean (mu)",
+    y = "Power"
+  ) +
+  scale_x_continuous(breaks = mu_values) +
+  scale_y_continuous(limits = c(0, 1)) +
+  theme_minimal()
+
+# Calculate average estimates across all and rejected samples
+estimate_results =
+  simulation_results |>
+  group_by(mu) |>
+  summarize(
+    all_samples = mean(estimate),
+    rejected_samples = mean(estimate[rejected]),
+    .groups = "drop"
+  ) |>
+  pivot_longer(
+    cols = c(all_samples, rejected_samples),
+    names_to = "sample_type",
+    values_to = "mean_estimate"
+  ) |>
+  mutate(
+    sample_type = recode(
+      sample_type,
+      all_samples = "All Samples",
+      rejected_samples = "Rejected Samples Only"
+    )
+  )
+
+# Compare average estimates with true means
+estimate_results |>
+  ggplot(aes(
+    x = mu,
+    y = mean_estimate,
+    color = sample_type
+  )) +
+  geom_abline(
+    slope = 1,
+    intercept = 0,
+    linetype = "dashed",
+    color = "gray50"
+  ) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  labs(
+    title = "Average Estimated Mean vs. True Mean",
+    x = "True Mean (mu)",
+    y = "Average Estimated Mean",
+    color = "Sample Type"
+  ) +
+  scale_x_continuous(breaks = mu_values) +
+  theme_minimal()
+```
+
+**Power and Effect Size**
+
+The statistical power increases as the true mean moves farther away from the null value of zero. When the true mean is zero, the rejection rate is approximately 0.05, consistent with the significance level. As the effect size increases, the test becomes more likely to reject the null hypothesis, with power approaching 1 for larger values of the true mean.
+
+**Average Estimated Mean**
+
+The average estimated mean across all simulated samples is approximately equal to the true mean, indicating that the sample mean is an unbiased estimator. However, when considering only samples in which the null hypothesis is rejected, the average estimate tends to be larger than the true mean for smaller positive effect sizes. This occurs because statistically significant results are more likely to arise from samples with unusually large estimated effects. As power increases, this selection bias becomes smaller, and the average estimate among rejected samples approaches the true mean.
